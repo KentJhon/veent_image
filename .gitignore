@@ -1,0 +1,27 @@
+# Environment
+.env
+.env.local
+
+# Data directories (created by docker compose)
+immich-data/
+immich-db/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Immich source (reference only, too large for repo)
+immich-main/
+
+# Node
+node_modules/
+
+# SvelteKit build
+sveltekit-app/.svelte-kit/
+sveltekit-app/build/
+
+# Watermark cache
+/tmp/watermark-cache/
+
+# Claude plans/memory (local only)
+.claude/

@@ -16,6 +16,7 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 	}
 
 	const session = await locals.auth();
+	console.log('[upload] Session:', session?.user?.id ?? 'NO SESSION');
 	if (!session?.user?.id) {
 		return error(401, 'Unauthorized');
 	}
@@ -48,10 +49,13 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 
 	for (const file of files) {
 		try {
+			console.log(`[upload] Uploading ${file.name} (${file.size} bytes) to album ${albumId}`);
 			const asset = await uploadEventPhoto(albumId, file);
+			console.log(`[upload] Success: ${file.name} → ${asset.id} (${asset.status})`);
 			const status = asset.status === 'duplicate' ? 'duplicate' : 'success';
 			results.push({ id: asset.id, filename: file.name, status });
 		} catch (err) {
+			console.error(`[upload] FAILED ${file.name}:`, err);
 			errors.push({
 				filename: file.name,
 				status: 'error',

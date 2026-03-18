@@ -57,6 +57,7 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
 	providers,
 	secret: AUTH_SECRET,
 	trustHost: true,
+	useSecureCookies: false,
 	session: { strategy: 'jwt' },
 	callbacks: {
 		jwt({ token, user }) {

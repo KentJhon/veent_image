@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import SelfieCapture from '$lib/components/SelfieCapture.svelte';
+	import TextSearch from '$lib/components/TextSearch.svelte';
 	import PhotoGrid from '$lib/components/PhotoGrid.svelte';
 	import PhotoLightbox from '$lib/components/PhotoLightbox.svelte';
 
@@ -15,6 +16,7 @@
 	let selectedIds = $state<string[]>([]);
 	let distances = $state<DistanceInfo[]>([]);
 	let status = $state<'loading' | 'idle' | 'processing' | 'results' | 'error'>('loading');
+	let searchMethod = $state<'face' | 'text' | null>(null);
 	let errorMessage = $state('');
 	let totalMatches = $state(0);
 	let facesDetected = $state(0);
@@ -38,6 +40,7 @@
 					matchedAssetIds = data.assetIds ?? [];
 					totalMatches = data.totalMatches ?? 0;
 					sessionId = data.sessionId;
+					searchMethod = 'face';
 					status = 'results';
 				} else {
 					status = 'idle';
@@ -50,6 +53,7 @@
 
 	async function handleSelfie(file: File) {
 		status = 'processing';
+		searchMethod = 'face';
 		errorMessage = '';
 
 		const formData = new FormData();
@@ -98,8 +102,18 @@
 		selectedIds = [];
 	}
 
+	function handleTextResults(assetIds: string[]) {
+		matchedAssetIds = assetIds;
+		totalMatches = assetIds.length;
+		distances = [];
+		facesDetected = 0;
+		searchMethod = 'text';
+		status = 'results';
+	}
+
 	function reset() {
 		status = 'idle';
+		searchMethod = null;
 		matchedAssetIds = [];
 		selectedIds = [];
 		distances = [];
@@ -190,11 +204,22 @@
 		<p>Checking for previous results...</p>
 	</div>
 {:else if status === 'idle'}
-	<div class="selfie-section">
-		<p class="instruction">
-			Upload a selfie or take a photo. Our AI will find all photos of you from this event.
-		</p>
-		<SelfieCapture bind:this={selfieCapture} onCapture={handleSelfie} />
+	<div class="search-options">
+		<div class="search-option">
+			<h2>Find by Text</h2>
+			<p class="option-desc">Search for text detected in photos — bib numbers, signs, banners, names on badges.</p>
+			<TextSearch {eventId} onResults={handleTextResults} />
+		</div>
+
+		<div class="or-divider">
+			<span>or</span>
+		</div>
+
+		<div class="search-option">
+			<h2>Find with Face Recognition</h2>
+			<p class="option-desc">Upload a selfie or take a photo. Our AI will find all photos of you from this event.</p>
+			<SelfieCapture bind:this={selfieCapture} onCapture={handleSelfie} />
+		</div>
 	</div>
 {:else if status === 'processing'}
 	<div class="processing">
@@ -277,9 +302,14 @@
 		</div>
 	{:else}
 		<div class="no-matches">
-			<p>No matching photos were found for your face in this event.</p>
-			<p class="sub">Try a different photo with better lighting, or the photos may not have been processed yet.</p>
-			<button onclick={reset}>Try Another Photo</button>
+			{#if searchMethod === 'text'}
+				<p>No photos with matching text were found in this event.</p>
+				<p class="sub">Try different keywords, or the photos may not have been processed for OCR yet.</p>
+			{:else}
+				<p>No matching photos were found for your face in this event.</p>
+				<p class="sub">Try a different photo with better lighting, or the photos may not have been processed yet.</p>
+			{/if}
+			<button onclick={reset}>New Search</button>
 		</div>
 	{/if}
 {:else if status === 'error'}
@@ -316,15 +346,55 @@
 		font-size: 1.5rem;
 	}
 
-	.selfie-section {
-		text-align: center;
-		padding: 3rem 0;
+	.search-options {
+		display: flex;
+		gap: 2rem;
+		align-items: flex-start;
+		padding: 2rem 0;
 	}
 
-	.instruction {
+	.search-option {
+		flex: 1;
+		text-align: center;
+		padding: 1.5rem;
+		background: #0a0a0a;
+		border: 1px solid #222;
+		border-radius: 12px;
+	}
+
+	.search-option h2 {
+		font-size: 1.15rem;
+		margin-bottom: 0.5rem;
+	}
+
+	.option-desc {
 		color: #888;
-		margin-bottom: 2rem;
-		font-size: 1.1rem;
+		font-size: 0.9rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.or-divider {
+		display: flex;
+		align-items: center;
+		padding-top: 4rem;
+	}
+
+	.or-divider span {
+		color: #555;
+		font-size: 0.9rem;
+		font-weight: 600;
+		text-transform: uppercase;
+	}
+
+	@media (max-width: 768px) {
+		.search-options {
+			flex-direction: column;
+		}
+
+		.or-divider {
+			padding-top: 0;
+			justify-content: center;
+		}
 	}
 
 	.processing {

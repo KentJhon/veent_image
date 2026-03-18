@@ -13,3 +13,10 @@ export const WATERMARK_BRAND_NAME = env.WATERMARK_BRAND_NAME ?? 'EventSnap';
 export const WATERMARK_OPACITY = parseFloat(env.WATERMARK_OPACITY ?? '0.25');
 export const WATERMARK_CACHE_DIR = env.WATERMARK_CACHE_DIR ?? '/tmp/watermark-cache';
 export const WATERMARK_MAX_PREVIEW_WIDTH = parseInt(env.WATERMARK_MAX_PREVIEW_WIDTH ?? '1200');
+
+// S3 storage (optional — when set, originals are stored in S3 with Immich fallback)
+export const S3_URL = env.S3_URL ?? '';
+export const S3_BUCKET = env.S3_BUCKET ?? '';
+export const S3_ACCESS_KEY = env.S3_ACCESS_KEY ?? '';
+export const S3_SECRET_KEY = env.S3_SECRET_KEY ?? '';
+export const S3_REGION = env.S3_REGION ?? 'auto';

@@ -11,6 +11,7 @@ SvelteKit App (:5173/3000)
   │     ├── Immich PostgreSQL (:5435)         — assets, faces, pgvector embeddings
   │     ├── Immich ML Service (:3003)         — face detection (RetinaFace), recognition (ArcFace)
   │     └── Redis/Valkey                      — job queues
+  ├── S3-compatible storage (optional)        — original photo storage (MinIO/R2/Spaces)
   └── Watermark Engine (sharp, in-process)    — on-serve watermarking
 ```
 
@@ -24,6 +25,7 @@ SvelteKit App (:5173/3000)
 | Face Matching | Immich ML (buffalo_l/ArcFace) + pgvector cosine similarity |
 | Watermarking | sharp (Node.js), 3-layer SVG, on-serve with filesystem cache |
 | Payments | Abstract PaymentService interface (stub, Stripe/PayPal TBD) |
+| Storage (optional) | S3-compatible (MinIO/R2/Spaces) via @aws-sdk/client-s3 |
 | Deployment | Docker Compose (Immich + SvelteKit + 2× PostgreSQL) |
 
 ## Completed Phases
@@ -184,6 +186,18 @@ npm run dev -- --host   # --host exposes on LAN for mobile testing
 
 ## Integration Guide
 See [FACE-MATCH-API.md](./FACE-MATCH-API.md) for API docs to integrate face matching as a subsystem.
+
+### Phase 7 — S3 Storage (Optional) ✅
+- Optional S3 backend for original photo storage — enabled by setting `S3_URL` + `S3_BUCKET` env vars
+- When disabled (no env vars): zero behavior change, everything routes through Immich as before
+- **Upload flow**: Immich first (for ML/OCR/face/thumbnails), then fire-and-forget S3 upload. S3 failures are logged, never fatal.
+- **Download flow**: S3 first (faster), Immich fallback (covers legacy pre-S3 photos and S3 outages)
+- **Thumbnails**: always from Immich (needs watermarking pipeline)
+- S3 keys: `originals/{assetId}`, filename stored in `ContentDisposition` metadata
+- `forcePathStyle: true` for MinIO/R2/Spaces compatibility
+- Lazy-initialized S3Client (only created when S3 is enabled)
+- Uses `@aws-sdk/client-s3` (modular, tree-shakeable)
+- **Files**: `s3.ts` (new), `env.ts`, `photo.service.ts`, `docker-compose.yml`, `.env.example` (both)
 
 ## Next Steps
 - [ ] API key auth for service-to-service calls (bypass session auth)

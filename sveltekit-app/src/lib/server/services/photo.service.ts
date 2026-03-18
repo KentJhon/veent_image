@@ -1,6 +1,7 @@
 import { getAlbumPhotos, getAssetThumbnail, getAssetOriginal, addPhotosToAlbum, uploadPhoto } from '../immich.js';
 import { getWatermarkedImage } from '../watermark.js';
 import { WATERMARK_BRAND_NAME } from '../env.js';
+import { s3Enabled, uploadToS3, getFromS3 } from '../s3.js';
 import { db } from '../db/index.js';
 import { purchases } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
@@ -25,6 +26,13 @@ export async function uploadEventPhoto(albumId: string, file: File) {
 
 	// asset.status is "duplicate" if already uploaded — still add to album (idempotent)
 	await addPhotosToAlbum(albumId, [asset.id]);
+
+	// Fire-and-forget S3 upload (Immich is source of truth; S3 is for fast original downloads)
+	if (s3Enabled) {
+		uploadToS3(asset.id, file.name, Buffer.from(buffer), file.type)
+			.catch((err) => console.error(`[S3] Upload failed for asset ${asset.id}:`, err));
+	}
+
 	return asset;
 }
 
@@ -73,6 +81,12 @@ export async function getPhotoOriginal(
 	// Verify purchase — originals are never served without payment
 	const purchased = await hasPurchased(userId, assetId);
 	if (!purchased) return null;
+
+	// Try S3 first (faster), fall back to Immich (legacy photos / S3 disabled)
+	if (s3Enabled) {
+		const s3Result = await getFromS3(assetId);
+		if (s3Result) return s3Result;
+	}
 
 	const res = await getAssetOriginal(assetId);
 	if (!res.ok || !res.body) {

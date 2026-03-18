@@ -32,14 +32,17 @@ SvelteKit App (:5173/3000)
 - SvelteKit project with adapter-node, TypeScript
 - Auth.js with Drizzle adapter + dev credentials provider
 - Drizzle schema: 10 tables (users, events, albums, purchases, face match sessions, etc.)
-- @immich/sdk integration (built from Immich source)
-- Docker Compose for full stack
+- @immich/sdk integration (switched to npm `@immich/sdk@^2.5.6` for Immich v2 compat)
+- Docker Compose for full stack (with exposed ports for local dev: ML :3003, Immich DB :5435, App DB :5434)
 - Dockerfile for SvelteKit app
+- Vite config updated to allow external hosts (tunnel access)
 
 ### Phase 2 — Events & Photo Upload ✅
 - Event CRUD with automatic Immich album provisioning
 - Photographer assignment system (by email)
 - Drag-and-drop multi-file upload with per-file progress
+- SHA-256 content hash deduplication on uploads (Immich returns `duplicate` status)
+- Duplicate detection UI: yellow border + "Duplicate" badge on re-uploaded files
 - Photo gallery with pagination
 - Event management admin page
 
@@ -55,7 +58,7 @@ SvelteKit App (:5173/3000)
 - Selfie capture (camera + file upload) with client-side validation
 - Image preprocessing (resize, EXIF rotation) before ML
 - Direct Immich ML service calls (POST /predict → ArcFace 512-dim embeddings)
-- pgvector cosine similarity search scoped to event albums
+- pgvector cosine similarity search scoped to event albums (updated SQL for Immich v2: `album_asset` table)
 - Confidence indicators (High/Good/Possible match)
 - Session caching + recovery (return to previous results)
 - ML health check + timeout handling
@@ -76,6 +79,8 @@ SvelteKit App (:5173/3000)
 - Admin dashboard with live monitoring
 - Docker container log viewer
 - Service health indicators with latency
+- Live ML job progress bar on upload page (polls `/api/jobs` every 2s)
+- `/api/jobs` endpoint — proxies Immich job queue status (face detection, recognition, thumbnails, etc.)
 
 ## API Endpoints (16 total)
 | Endpoint | Methods | Purpose |
@@ -96,6 +101,7 @@ SvelteKit App (:5173/3000)
 | `/api/admin/logs` | GET | Docker container logs |
 | `/api/admin/watermark-cache` | GET, DELETE | Cache stats & clearing |
 | `/api/admin/watermark-preview` | GET | Test watermark rendering |
+| `/api/jobs` | GET | Immich ML job queue status |
 
 ## Pages (10 total)
 - `/` — Landing page
@@ -115,32 +121,70 @@ SvelteKit App (:5173/3000)
 - `PhotoUploader` — Drag-and-drop multi-file upload with progress
 - `SelfieCapture` — Camera/file capture with validation tips
 
-## Immich Setup (Local Dev)
-- Admin email: `admin@eventsnap.local`
-- Admin password: `eventsnap-admin-2026`
-- API key: stored in `sveltekit-app/.env` (not committed)
-- Service user ID: `e84563ba-489b-4e2f-a3e3-dd23aa4a3149`
-- Read-only DB role: `sveltekit_ro` on Immich Postgres
-
 ## Running Locally
 ```bash
-# 1. Start Immich
-cd immich-main/docker && docker compose up -d
+# 1. Copy env and create data directories
+cp .env.example .env    # then fill in API key + service user ID after step 3
+mkdir -p ./immich-data ./immich-db
 
-# 2. Start app database
-docker run -d --name eventsnap-postgres \
-  -e POSTGRES_DB=eventsnap -e POSTGRES_USER=app -e POSTGRES_PASSWORD=apppassword \
-  -p 5434:5432 postgres:16-alpine
+# 2. Start infrastructure
+docker compose up -d database redis immich-server immich-machine-learning app-database
 
-# 3. Push schema
-cd sveltekit-app && cp .env.example .env  # then fill in real values
-npx drizzle-kit push
+# 3. Create Immich admin + API key
+#    - Open http://localhost:2283, create admin account
+#    - Or use the API:
+curl -X POST http://localhost:2283/api/auth/admin-sign-up \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@eventsnap.local","password":"adminpassword123","name":"Admin"}'
+#    - Login, create API key with "all" permissions
+#    - Put API key and user ID in .env
 
-# 4. Start dev server
-npm run dev
+# 4. Create read-only Immich DB user
+docker exec immich_postgres psql -U postgres -d immich -c "
+  CREATE ROLE sveltekit_ro WITH LOGIN PASSWORD 'readonly_password';
+  GRANT CONNECT ON DATABASE immich TO sveltekit_ro;
+  GRANT USAGE ON SCHEMA public TO sveltekit_ro;
+  GRANT SELECT ON ALL TABLES IN SCHEMA public TO sveltekit_ro;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO sveltekit_ro;
+"
+
+# 5. Install deps and push schema
+cd sveltekit-app && npm install
+APP_DATABASE_URL=postgresql://app:apppassword@localhost:5434/app npx drizzle-kit push
+
+# 6. Start dev server
+IMMICH_API_URL=http://localhost:2283/api \
+IMMICH_API_KEY=<your-key> \
+IMMICH_ML_URL=http://localhost:3003 \
+IMMICH_DB_URL=postgresql://sveltekit_ro:readonly_password@localhost:5435/immich \
+IMMICH_SERVICE_USER_ID=<your-user-id> \
+APP_DATABASE_URL=postgresql://app:apppassword@localhost:5434/app \
+AUTH_SECRET=<your-secret> \
+AUTH_TRUST_HOST=true \
+npm run dev -- --host   # --host exposes on LAN for mobile testing
 ```
 
+## Session Log — 2026-03-18
+
+### Issues Found & Fixed
+1. **`@immich/sdk` broken** — was referencing local `file:../immich-main/open-api/typescript-sdk` that didn't exist. Switched to npm `@immich/sdk@^2.5.6`.
+2. **Face match SQL incompatible with Immich v2** — table `albums_assets_assets` renamed to `album_asset`, columns `assetsId`/`albumsId` renamed to `assetId`/`albumId`. Fixed in `face-match.ts`.
+3. **No duplicate upload detection** — same photo could be uploaded multiple times. Added SHA-256 content hashing as `deviceAssetId` so Immich deduplicates. UI now shows yellow "Duplicate" badge.
+4. **No ML processing feedback** — users couldn't tell when face detection finished. Added `/api/jobs` endpoint and live progress bar on upload page.
+5. **Docker ports not exposed for local dev** — Immich ML (:3003), Immich DB (:5435), App DB (:5434) now mapped in docker-compose.yml.
+6. **Mobile testing** — used Cloudflare Tunnel (`cloudflared`) for public HTTPS URL. Added `allowedHosts: true` to Vite config.
+
+### Tested & Verified
+- End-to-end upload → face detection → selfie matching flow works
+- Duplicate upload detection works (same file re-uploaded shows "Duplicate")
+- Mobile selfie capture works over HTTPS tunnel
+- Face matching returns correct results with distance scoring
+
+## Integration Guide
+See [FACE-MATCH-API.md](./FACE-MATCH-API.md) for API docs to integrate face matching as a subsystem.
+
 ## Next Steps
+- [ ] API key auth for service-to-service calls (bypass session auth)
 - [ ] Integrate real payment provider (Stripe)
 - [ ] Add Google OAuth for production auth
 - [ ] CDN for watermarked thumbnails (Cloudflare)

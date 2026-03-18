@@ -11,8 +11,19 @@ export async function listEventPhotos(albumId: string, page = 1, size = 50) {
 }
 
 export async function uploadEventPhoto(albumId: string, file: File) {
-	const deviceAssetId = `${Date.now()}-${file.name}`;
-	const asset = await uploadPhoto(file, deviceAssetId);
+	// Use content hash as deviceAssetId so Immich deduplicates identical files
+	const buffer = await file.arrayBuffer();
+	const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+	const hashHex = Array.from(new Uint8Array(hashBuffer))
+		.map((b) => b.toString(16).padStart(2, '0'))
+		.join('');
+	const deviceAssetId = `eventsnap-${hashHex}`;
+
+	// Re-create the File from the buffer since we consumed the arrayBuffer
+	const newFile = new File([buffer], file.name, { type: file.type });
+	const asset = await uploadPhoto(newFile, deviceAssetId);
+
+	// asset.status is "duplicate" if already uploaded — still add to album (idempotent)
 	await addPhotosToAlbum(albumId, [asset.id]);
 	return asset;
 }

@@ -182,10 +182,10 @@ export async function searchFacesInAlbum(
 				FROM asset_face af
 				INNER JOIN asset a ON a.id = af."assetId"
 				INNER JOIN face_search fs ON fs."faceId" = af.id
-				INNER JOIN albums_assets_assets aaa ON aaa."assetsId" = a.id
+				INNER JOIN album_asset aa ON aa."assetId" = a.id
 				WHERE a."ownerId" = ANY($2::uuid[])
 					AND a."deletedAt" IS NULL
-					AND aaa."albumsId" = $3
+					AND aa."albumId" = $3
 				ORDER BY distance
 				LIMIT $4
 			)

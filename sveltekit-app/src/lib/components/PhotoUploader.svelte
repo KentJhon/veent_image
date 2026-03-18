@@ -8,7 +8,7 @@
 		file: File;
 		id: string;
 		progress: number;
-		status: 'pending' | 'uploading' | 'success' | 'error';
+		status: 'pending' | 'uploading' | 'success' | 'duplicate' | 'error';
 		error?: string;
 		previewUrl?: string;
 	}
@@ -66,7 +66,7 @@
 	}
 
 	function clearCompleted() {
-		items = items.filter((i) => i.status !== 'success');
+		items = items.filter((i) => i.status !== 'success' && i.status !== 'duplicate');
 	}
 
 	async function uploadAll() {
@@ -96,6 +96,9 @@
 					if (data.failed > 0 && data.errors?.[0]) {
 						item.status = 'error';
 						item.error = data.errors[0].message;
+					} else if (data.results?.[0]?.status === 'duplicate') {
+						item.status = 'duplicate';
+						item.progress = 100;
 					} else {
 						item.status = 'success';
 						item.progress = 100;
@@ -112,7 +115,8 @@
 	}
 
 	let pendingCount = $derived(items.filter((i) => i.status === 'pending' || i.status === 'error').length);
-	let successCount = $derived(items.filter((i) => i.status === 'success').length);
+	let successCount = $derived(items.filter((i) => i.status === 'success' || i.status === 'duplicate').length);
+	let duplicateCount = $derived(items.filter((i) => i.status === 'duplicate').length);
 	let totalSize = $derived(
 		items
 			.filter((i) => i.status === 'pending' || i.status === 'error')
@@ -146,6 +150,9 @@
 				{#if successCount > 0}
 					<span class="stat-success">{successCount} uploaded</span>
 				{/if}
+				{#if duplicateCount > 0}
+					<span class="stat-duplicate">{duplicateCount} duplicate{duplicateCount === 1 ? '' : 's'}</span>
+				{/if}
 				{#if pendingCount > 0}
 					<span class="stat-pending">{pendingCount} pending ({(totalSize / 1024 / 1024).toFixed(1)} MB)</span>
 				{/if}
@@ -169,7 +176,7 @@
 
 		<div class="file-grid">
 			{#each items as item (item.id)}
-				<div class="file-item" class:success={item.status === 'success'} class:error={item.status === 'error'}>
+				<div class="file-item" class:success={item.status === 'success'} class:duplicate={item.status === 'duplicate'} class:error={item.status === 'error'}>
 					{#if item.previewUrl}
 						<img src={item.previewUrl} alt="" class="file-preview" />
 					{/if}
@@ -181,6 +188,8 @@
 							<div class="progress-bar">
 								<div class="progress-fill" style="width: 50%"></div>
 							</div>
+						{:else if item.status === 'duplicate'}
+							<span class="status-badge duplicate-badge">Duplicate</span>
 						{:else if item.status === 'success'}
 							<span class="status-badge success-badge">Uploaded</span>
 						{:else if item.status === 'error'}
@@ -344,6 +353,10 @@
 		border-color: #22c55e;
 	}
 
+	.file-item.duplicate {
+		border-color: #eab308;
+	}
+
 	.file-item.error {
 		border-color: #ef4444;
 	}
@@ -411,6 +424,15 @@
 	.success-badge {
 		background: rgba(34, 197, 94, 0.2);
 		color: #22c55e;
+	}
+
+	.duplicate-badge {
+		background: rgba(234, 179, 8, 0.2);
+		color: #eab308;
+	}
+
+	.stat-duplicate {
+		color: #eab308;
 	}
 
 	.error-badge {

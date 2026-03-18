@@ -49,7 +49,8 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 	for (const file of files) {
 		try {
 			const asset = await uploadEventPhoto(albumId, file);
-			results.push({ id: asset.id, filename: file.name, status: 'success' });
+			const status = asset.status === 'duplicate' ? 'duplicate' : 'success';
+			results.push({ id: asset.id, filename: file.name, status });
 		} catch (err) {
 			errors.push({
 				filename: file.name,

@@ -82,7 +82,7 @@ SvelteKit App (:5173/3000)
 - Live ML job progress bar on upload page (polls `/api/jobs` every 2s)
 - `/api/jobs` endpoint — proxies Immich job queue status (face detection, recognition, thumbnails, etc.)
 
-## API Endpoints (16 total)
+## API Endpoints (17 total)
 | Endpoint | Methods | Purpose |
 |----------|---------|---------|
 | `/api/events` | GET, POST | List & create events |
@@ -91,6 +91,7 @@ SvelteKit App (:5173/3000)
 | `/api/events/[id]/photos` | GET | Paginated album photos |
 | `/api/events/[id]/upload` | POST | Photo upload to Immich |
 | `/api/events/[id]/purchased` | GET | User's purchased asset IDs |
+| `/api/events/[id]/text-search` | POST | OCR text search in event photos |
 | `/api/face-match` | GET, POST | Face matching + session retrieval |
 | `/api/photos/[id]` | GET | Watermarked thumbnail proxy |
 | `/api/download/[id]` | GET | Purchase-gated original download |
@@ -115,11 +116,12 @@ SvelteKit App (:5173/3000)
 - `/purchases` — Purchase history with downloads
 - `/admin` — Monitoring dashboard (health, metrics, logs)
 
-## Components (4)
+## Components (5)
 - `PhotoGrid` — Responsive image grid with selection
 - `PhotoLightbox` — Full-screen preview with keyboard nav
 - `PhotoUploader` — Drag-and-drop multi-file upload with progress
 - `SelfieCapture` — Camera/file capture with validation tips
+- `TextSearch` — OCR text search with mode toggle (contains/exact/starts with/ends with)
 
 ## Running Locally
 ```bash

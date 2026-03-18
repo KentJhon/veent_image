@@ -1,7 +1,7 @@
 import { getAlbumPhotos, getAssetThumbnail, getAssetOriginal, addPhotosToAlbum, uploadPhoto } from '../immich.js';
 import { getWatermarkedImage } from '../watermark.js';
 import { WATERMARK_BRAND_NAME } from '../env.js';
-import { s3Enabled, uploadToS3, getFromS3 } from '../s3.js';
+import { s3Enabled, uploadToS3, getFromS3, uploadThumbnailToS3, getThumbnailFromS3 } from '../s3.js';
 import { db } from '../db/index.js';
 import { purchases } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
@@ -44,22 +44,40 @@ export async function getPhotoThumbnail(
 	// Check if user has purchased this photo
 	const purchased = userId ? await hasPurchased(userId, assetId) : false;
 
-	// Fetch from Immich
-	const res = await getAssetThumbnail(assetId, size);
-	if (!res.ok) {
-		throw new Error(`Failed to fetch thumbnail: ${res.status}`);
-	}
+	// Fetch raw image: S3 first, Immich fallback (lazy-cache to S3)
+	let buffer: Buffer;
+	let contentType: string;
 
-	const buffer = Buffer.from(await res.arrayBuffer());
+	if (s3Enabled) {
+		const s3Result = await getThumbnailFromS3(assetId, size);
+		if (s3Result) {
+			buffer = s3Result.buffer;
+			contentType = s3Result.contentType;
+		} else {
+			// Not in S3 yet — fetch from Immich and cache to S3
+			const res = await getAssetThumbnail(assetId, size);
+			if (!res.ok) throw new Error(`Failed to fetch thumbnail: ${res.status}`);
+			buffer = Buffer.from(await res.arrayBuffer());
+			contentType = res.headers.get('content-type') ?? 'image/jpeg';
+			// Cache to S3 for next time (fire-and-forget)
+			uploadThumbnailToS3(assetId, size, buffer, contentType)
+				.catch((err) => console.error(`[S3] Thumbnail cache failed for ${assetId}:`, err));
+		}
+	} else {
+		const res = await getAssetThumbnail(assetId, size);
+		if (!res.ok) throw new Error(`Failed to fetch thumbnail: ${res.status}`);
+		buffer = Buffer.from(await res.arrayBuffer());
+		contentType = res.headers.get('content-type') ?? 'image/jpeg';
+	}
 
 	// Validate we got actual image data
 	if (buffer.length === 0) {
-		throw new Error('Empty image received from Immich');
+		throw new Error('Empty image received');
 	}
 
 	// Purchased users get the clean image directly
 	if (purchased) {
-		return { buffer, contentType: res.headers.get('content-type') ?? 'image/jpeg' };
+		return { buffer, contentType };
 	}
 
 	// Apply watermark for unpurchased users
@@ -67,10 +85,8 @@ export async function getPhotoThumbnail(
 		const watermarked = await getWatermarkedImage(assetId, size, buffer, WATERMARK_BRAND_NAME);
 		return { buffer: watermarked, contentType: 'image/jpeg' };
 	} catch (err) {
-		// If watermarking fails (corrupt image, etc.), still return the image
-		// but log the error. In production this should be monitored.
 		console.error(`Watermark failed for asset ${assetId}:`, err);
-		return { buffer, contentType: res.headers.get('content-type') ?? 'image/jpeg' };
+		return { buffer, contentType };
 	}
 }
 

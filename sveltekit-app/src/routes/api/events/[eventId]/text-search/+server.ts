@@ -53,7 +53,8 @@ export const POST: RequestHandler = async ({ request, params, locals }) => {
 		return json({
 			matched: result.assetIds.length > 0,
 			totalMatches: result.total,
-			assetIds: result.assetIds
+			assetIds: result.assetIds,
+			scores: result.scores
 		});
 	} catch (err) {
 		console.error('[text-search] Error:', err);

@@ -65,3 +65,46 @@ export async function getFromS3(
 		throw err;
 	}
 }
+
+export async function uploadThumbnailToS3(
+	assetId: string,
+	size: 'thumbnail' | 'preview',
+	buffer: Buffer,
+	contentType: string
+): Promise<void> {
+	await getClient().send(
+		new PutObjectCommand({
+			Bucket: S3_BUCKET,
+			Key: `${size}s/${assetId}`,
+			Body: buffer,
+			ContentType: contentType
+		})
+	);
+}
+
+export async function getThumbnailFromS3(
+	assetId: string,
+	size: 'thumbnail' | 'preview'
+): Promise<{ buffer: Buffer; contentType: string } | null> {
+	try {
+		const res = await getClient().send(
+			new GetObjectCommand({
+				Bucket: S3_BUCKET,
+				Key: `${size}s/${assetId}`
+			})
+		);
+
+		if (!res.Body) return null;
+
+		const bytes = await res.Body.transformToByteArray();
+		return {
+			buffer: Buffer.from(bytes),
+			contentType: res.ContentType ?? 'image/jpeg'
+		};
+	} catch (err: any) {
+		if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
+			return null;
+		}
+		throw err;
+	}
+}

@@ -78,6 +78,8 @@ services:
       IMMICH_API_KEY: ${IMMICH_ADMIN_API_KEY:?}
       IMMICH_ML_URL: http://immich-machine-learning:3003
       IMMICH_DB_URL: postgresql://${IMMICH_RO_USER:-sveltekit_ro}:${IMMICH_RO_PASS:?}@database:5432/${DB_DATABASE_NAME:-immich}
+      AUTH_TRUST_HOST: 'true'
+      ORIGIN: http://localhost:3000
       IMMICH_SERVICE_USER_ID: ${IMMICH_SERVICE_USER_ID:?}
       S3_URL: ${S3_URL:-}
       S3_BUCKET: ${S3_BUCKET:-}
@@ -91,6 +93,26 @@ services:
       - immich-machine-learning
       - app-database
     restart: always
+
+  # ── MinIO (S3-compatible object storage) ───────────
+
+  minio:
+    container_name: eventsnap_minio
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - '9000:9000'   # S3 API
+      - '9001:9001'   # Web console
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio-data:/data
+    restart: always
+    healthcheck:
+      test: mc ready local || exit 1
+      interval: 10s
+      timeout: 5s
 
   # ── App Database (separate from Immich) ────────────
 
@@ -114,3 +136,4 @@ services:
 volumes:
   model-cache:
   app-db-data:
+  minio-data:

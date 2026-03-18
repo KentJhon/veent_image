@@ -126,80 +126,83 @@ export async function searchByText(
 	mode: 'contains' | 'exact' | 'startsWith' | 'endsWith' = 'contains',
 	page = 1,
 	size = 200
-): Promise<{ assetIds: string[]; total: number }> {
-	// For "contains" mode, try the Immich SDK's OCR search first
-	if (mode === 'contains') {
-		ensureInit();
-		try {
-			const result = await searchAssets({
-				metadataSearchDto: {
-					ocr: query,
-					albumIds: [albumId],
-					page,
-					size
-				}
-			});
-
-			const items = (result as { assets?: { items?: AssetResponseDto[] } })?.assets?.items ?? [];
-			if (items.length > 0) {
-				return {
-					assetIds: items.map((a) => a.id),
-					total: items.length
-				};
-			}
-			// SDK returned no results — fall through to DB substring search
-		} catch {
-			// SDK OCR search not available — fall through to direct DB query
-		}
-	}
-
-	// Direct DB query for all modes (and fallback for contains)
+): Promise<{ assetIds: string[]; scores: { assetId: string; score: number }[]; total: number }> {
+	// Direct DB query with similarity scoring for all modes
 	const serviceUserId = IMMICH_SERVICE_USER_ID;
 	if (!serviceUserId) {
 		throw new Error('IMMICH_SERVICE_USER_ID not configured');
 	}
 
-	let pattern: string;
-	switch (mode) {
-		case 'exact':
-			pattern = query;
-			break;
-		case 'startsWith':
-			pattern = `${query}%`;
-			break;
-		case 'endsWith':
-			pattern = `%${query}`;
-			break;
-		case 'contains':
-		default:
-			pattern = `%${query}%`;
-			break;
-	}
-
-	const useIlike = mode !== 'exact';
-	const operator = useIlike ? 'ILIKE' : '=';
-
 	const client = await immichPool.connect();
 	try {
-		const result = await client.query(
-			`
-			SELECT DISTINCT a.id AS "assetId"
-			FROM asset a
-			INNER JOIN album_asset aa ON aa."assetId" = a.id
-			INNER JOIN ocr_search os ON os."assetId" = a.id
-			WHERE aa."albumId" = $1
-				AND a."ownerId" = ANY($2::uuid[])
-				AND a."deletedAt" IS NULL
-				AND os.text ${operator} $3
-			ORDER BY a.id
-			LIMIT $4 OFFSET $5
-			`,
-			[albumId, [serviceUserId], pattern, size, (page - 1) * size]
-		);
+		let result;
 
+		if (mode === 'contains') {
+			// Hybrid: exact substring matches + fuzzy word_similarity matches, ranked by score
+			const pattern = `%${query}%`;
+			result = await client.query(
+				`
+				SELECT DISTINCT a.id AS "assetId",
+					GREATEST(
+						CASE WHEN os.text ILIKE $3 THEN 1.0 ELSE 0 END,
+						word_similarity($4, os.text)
+					) AS score
+				FROM asset a
+				INNER JOIN album_asset aa ON aa."assetId" = a.id
+				INNER JOIN ocr_search os ON os."assetId" = a.id
+				WHERE aa."albumId" = $1
+					AND a."ownerId" = ANY($2::uuid[])
+					AND a."deletedAt" IS NULL
+					AND (os.text ILIKE $3 OR word_similarity($4, os.text) >= 0.3)
+				ORDER BY score DESC, a.id
+				LIMIT $5 OFFSET $6
+				`,
+				[albumId, [serviceUserId], pattern, query, size, (page - 1) * size]
+			);
+		} else {
+			// Exact / startsWith / endsWith — deterministic match, score = 1.0
+			let pattern: string;
+			let operator: string;
+			switch (mode) {
+				case 'exact':
+					pattern = query;
+					operator = '=';
+					break;
+				case 'startsWith':
+					pattern = `${query}%`;
+					operator = 'ILIKE';
+					break;
+				case 'endsWith':
+					pattern = `%${query}`;
+					operator = 'ILIKE';
+					break;
+				default:
+					pattern = `%${query}%`;
+					operator = 'ILIKE';
+			}
+
+			result = await client.query(
+				`
+				SELECT DISTINCT a.id AS "assetId", 1.0 AS score
+				FROM asset a
+				INNER JOIN album_asset aa ON aa."assetId" = a.id
+				INNER JOIN ocr_search os ON os."assetId" = a.id
+				WHERE aa."albumId" = $1
+					AND a."ownerId" = ANY($2::uuid[])
+					AND a."deletedAt" IS NULL
+					AND os.text ${operator} $3
+				ORDER BY a.id
+				LIMIT $4 OFFSET $5
+				`,
+				[albumId, [serviceUserId], pattern, size, (page - 1) * size]
+			);
+		}
+
+		const rows = result.rows as { assetId: string; score: number }[];
 		return {
-			assetIds: result.rows.map((r: { assetId: string }) => r.assetId),
-			total: result.rows.length
+			assetIds: rows.map((r) => r.assetId),
+			scores: rows.map((r) => ({ assetId: r.assetId, score: Number(r.score) })),
+			total: rows.length
 		};
 	} finally {
 		client.release();

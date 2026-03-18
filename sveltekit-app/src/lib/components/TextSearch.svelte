@@ -1,7 +1,12 @@
 <script lang="ts">
+	interface TextScore {
+		assetId: string;
+		score: number;
+	}
+
 	interface Props {
 		eventId: string;
-		onResults: (assetIds: string[]) => void;
+		onResults: (assetIds: string[], scores: TextScore[]) => void;
 		disabled?: boolean;
 	}
 
@@ -33,7 +38,7 @@
 				return;
 			}
 
-			onResults(data.assetIds ?? []);
+			onResults(data.assetIds ?? [], data.scores ?? []);
 		} catch {
 			errorMessage = 'Something went wrong. Please try again.';
 		} finally {

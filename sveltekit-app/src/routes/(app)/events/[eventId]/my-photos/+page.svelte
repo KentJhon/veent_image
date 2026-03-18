@@ -102,10 +102,11 @@
 		selectedIds = [];
 	}
 
-	function handleTextResults(assetIds: string[]) {
+	function handleTextResults(assetIds: string[], scores: { assetId: string; score: number }[]) {
 		matchedAssetIds = assetIds;
 		totalMatches = assetIds.length;
-		distances = [];
+		// Convert text similarity scores (0-1, higher=better) to distance format (lower=better)
+		distances = scores.map((s) => ({ assetId: s.assetId, distance: 1 - s.score }));
 		facesDetected = 0;
 		searchMethod = 'text';
 		status = 'results';

@@ -163,6 +163,13 @@ export async function getWatermarkedImage(
 /**
  * Clear the watermark cache. Call when branding/settings change.
  */
+export function clearWatermarkCacheForAsset(assetId: string): void {
+	for (const size of ['thumbnail', 'preview']) {
+		const file = join(WATERMARK_CACHE_DIR, `${assetId}-${size}.jpg`);
+		try { unlinkSync(file); } catch { /* not cached */ }
+	}
+}
+
 export function clearWatermarkCache(): { cleared: number } {
 	let cleared = 0;
 	try {

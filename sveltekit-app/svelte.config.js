@@ -5,7 +5,7 @@ const config = {
 	kit: {
 		adapter: adapter(),
 		csrf: {
-			trustedOrigins: ['https://*.trycloudflare.com']
+			trustedOrigins: ['*']
 		}
 	},
 	vitePlugin: {

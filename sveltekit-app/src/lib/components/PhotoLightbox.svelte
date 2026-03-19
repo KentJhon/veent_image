@@ -4,11 +4,23 @@
 		onclose: () => void;
 		onprev?: () => void;
 		onnext?: () => void;
+		ondelete?: (assetId: string) => void;
 		hasPrev?: boolean;
 		hasNext?: boolean;
+		canDelete?: boolean;
 	}
 
-	let { assetId, onclose, onprev, onnext, hasPrev = false, hasNext = false }: Props = $props();
+	let { assetId, onclose, onprev, onnext, ondelete, hasPrev = false, hasNext = false, canDelete = false }: Props = $props();
+
+	let deleting = $state(false);
+
+	async function handleDelete() {
+		if (!assetId || !ondelete) return;
+		if (!confirm('Delete this photo? This cannot be undone.')) return;
+		deleting = true;
+		ondelete(assetId);
+		deleting = false;
+	}
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') onclose();
@@ -43,6 +55,12 @@
 			<button class="close-btn" onclick={onclose} aria-label="Close">
 				&times;
 			</button>
+
+			{#if canDelete && ondelete}
+				<button class="delete-btn" onclick={handleDelete} disabled={deleting} aria-label="Delete photo">
+					{deleting ? 'Deleting...' : 'Delete'}
+				</button>
+			{/if}
 		</div>
 	</div>
 {/if}
@@ -115,6 +133,28 @@
 
 	.nav-next {
 		right: -60px;
+	}
+
+	.delete-btn {
+		position: absolute;
+		bottom: -40px;
+		right: 0;
+		background: #dc2626;
+		border: none;
+		color: #fff;
+		font-size: 0.85rem;
+		padding: 0.4rem 1rem;
+		border-radius: 6px;
+		cursor: pointer;
+	}
+
+	.delete-btn:hover:not(:disabled) {
+		background: #b91c1c;
+	}
+
+	.delete-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	@media (max-width: 768px) {

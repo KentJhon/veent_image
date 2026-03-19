@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { S3_URL, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION } from './env.js';
 
 export const s3Enabled = !!(S3_URL && S3_BUCKET);
@@ -107,4 +107,14 @@ export async function getThumbnailFromS3(
 		}
 		throw err;
 	}
+}
+
+export async function deleteFromS3(assetId: string): Promise<void> {
+	const client = getClient();
+	const keys = [`originals/${assetId}`, `thumbnails/${assetId}`, `previews/${assetId}`];
+	await Promise.allSettled(
+		keys.map((Key) =>
+			client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key }))
+		)
+	);
 }

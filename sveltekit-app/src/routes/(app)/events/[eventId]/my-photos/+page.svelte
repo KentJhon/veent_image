@@ -103,10 +103,11 @@
 	}
 
 	function handleTextResults(assetIds: string[], scores: { assetId: string; score: number }[]) {
-		matchedAssetIds = assetIds;
-		totalMatches = assetIds.length;
-		// Convert text similarity scores (0-1, higher=better) to distance format (lower=better)
-		distances = scores.map((s) => ({ assetId: s.assetId, distance: 1 - s.score }));
+		// Sort by score descending (highest relevance first)
+		const sorted = [...scores].sort((a, b) => b.score - a.score);
+		matchedAssetIds = sorted.map((s) => s.assetId);
+		totalMatches = sorted.length;
+		distances = sorted.map((s) => ({ assetId: s.assetId, distance: 1 - s.score }));
 		facesDetected = 0;
 		searchMethod = 'text';
 		status = 'results';
@@ -147,6 +148,17 @@
 	function getConfidence(assetId: string): string {
 		const d = distances.find((x) => x.assetId === assetId);
 		if (!d) return '';
+
+		if (searchMethod === 'text') {
+			// distance = 1 - score; score 1.0 = exact match, 0.3 = threshold
+			const score = 1 - d.distance;
+			if (score >= 0.9) return 'Exact match';
+			if (score >= 0.6) return 'High match';
+			if (score >= 0.4) return 'Good match';
+			return 'Possible match';
+		}
+
+		// Face match: distance is cosine distance (lower = better)
 		if (d.distance < 0.35) return 'High match';
 		if (d.distance < 0.5) return 'Good match';
 		return 'Possible match';
@@ -190,9 +202,88 @@
 		}
 	}
 
+	let deletingPhotos = $state(false);
+
+	async function deleteSelected() {
+		if (selectedIds.length === 0) return;
+		if (!confirm(`Delete ${selectedIds.length} photo(s)? This cannot be undone.`)) return;
+
+		deletingPhotos = true;
+		const failed: string[] = [];
+
+		for (const id of selectedIds) {
+			const res = await fetch(`/api/photos/${id}`, { method: 'DELETE' });
+			if (!res.ok) failed.push(id);
+		}
+
+		matchedAssetIds = matchedAssetIds.filter((id) => !selectedIds.includes(id) || failed.includes(id));
+		totalMatches = matchedAssetIds.length;
+		selectedIds = [];
+		deletingPhotos = false;
+
+		if (failed.length > 0) {
+			alert(`Failed to delete ${failed.length} photo(s).`);
+		}
+	}
+
+	async function deleteSingle(assetId: string) {
+		const res = await fetch(`/api/photos/${assetId}`, { method: 'DELETE' });
+		if (res.ok) {
+			const idx = matchedAssetIds.indexOf(assetId);
+			matchedAssetIds = matchedAssetIds.filter((id) => id !== assetId);
+			totalMatches = matchedAssetIds.length;
+			if (matchedAssetIds.length === 0) {
+				lightboxId = null;
+			} else if (idx < matchedAssetIds.length) {
+				lightboxId = matchedAssetIds[idx];
+			} else {
+				lightboxId = matchedAssetIds[matchedAssetIds.length - 1];
+			}
+		} else {
+			alert('Failed to delete photo.');
+		}
+	}
+
+	function isStrongMatch(assetId: string): boolean {
+		const conf = getConfidence(assetId);
+		return conf === 'Exact match' || conf === 'High match' || conf === 'Good match';
+	}
+
+	let strongMatches = $derived(matchedAssetIds.filter((id) => isStrongMatch(id)));
+	let possibleMatches = $derived(matchedAssetIds.filter((id) => !isStrongMatch(id)));
+
 	let lightboxIdx = $derived(lightboxId ? matchedAssetIds.indexOf(lightboxId) : -1);
 	let allSelected = $derived(selectedIds.length === matchedAssetIds.length && matchedAssetIds.length > 0);
 </script>
+
+{#snippet photoCard(assetId: string)}
+	<div class="result-item" class:selected={selectedIds.includes(assetId)}>
+		<button
+			class="result-photo"
+			onclick={() => toggleSelect(assetId)}
+			type="button"
+		>
+			<img
+				src="/api/photos/{assetId}?size=thumbnail"
+				alt=""
+				loading="lazy"
+			/>
+			{#if selectedIds.includes(assetId)}
+				<div class="check-badge">&#10003;</div>
+			{/if}
+		</button>
+		<div class="result-meta">
+			{#if getConfidence(assetId)}
+				<span class="confidence" class:high={getConfidence(assetId) === 'High match' || getConfidence(assetId) === 'Exact match'} class:good={getConfidence(assetId) === 'Good match'}>
+					{getConfidence(assetId)}
+				</span>
+			{/if}
+			<button class="expand-btn" onclick={() => openLightbox(assetId)} type="button" aria-label="View full size">
+				&#x26F6;
+			</button>
+		</div>
+	</div>
+{/snippet}
 
 <div class="page-header">
 	<a href="/events/{eventId}" class="back">&larr; Back to event</a>
@@ -232,8 +323,10 @@
 	<div class="results-header">
 		<div>
 			<h2>
-				{#if totalMatches > 0}
-					Found {totalMatches} photo{totalMatches === 1 ? '' : 's'} of you
+				{#if strongMatches.length > 0}
+					Found {strongMatches.length} photo{strongMatches.length === 1 ? '' : 's'} of you
+				{:else if possibleMatches.length > 0}
+					Possible photos of you
 				{:else}
 					No matching photos found
 				{/if}
@@ -255,6 +348,9 @@
 					<button class="buy-btn" onclick={handleBuy} disabled={purchasing}>
 						{purchasing ? 'Processing...' : `Buy ${selectedIds.length} Photo${selectedIds.length === 1 ? '' : 's'}`}
 					</button>
+					<button class="delete-btn" onclick={deleteSelected} disabled={deletingPhotos}>
+						{deletingPhotos ? 'Deleting...' : `Delete (${selectedIds.length})`}
+					</button>
 				{/if}
 			{/if}
 			<button onclick={reset} class="tertiary">New Search</button>
@@ -271,36 +367,25 @@
 	{/if}
 
 	{#if matchedAssetIds.length > 0}
-		<div class="results-grid">
-			{#each matchedAssetIds as assetId}
-				<div class="result-item" class:selected={selectedIds.includes(assetId)}>
-					<button
-						class="result-photo"
-						onclick={() => toggleSelect(assetId)}
-						type="button"
-					>
-						<img
-							src="/api/photos/{assetId}?size=thumbnail"
-							alt=""
-							loading="lazy"
-						/>
-						{#if selectedIds.includes(assetId)}
-							<div class="check-badge">&#10003;</div>
-						{/if}
-					</button>
-					<div class="result-meta">
-						{#if getConfidence(assetId)}
-							<span class="confidence" class:high={getConfidence(assetId) === 'High match'} class:good={getConfidence(assetId) === 'Good match'}>
-								{getConfidence(assetId)}
-							</span>
-						{/if}
-						<button class="expand-btn" onclick={() => openLightbox(assetId)} type="button" aria-label="View full size">
-							&#x26F6;
-						</button>
-					</div>
-				</div>
-			{/each}
-		</div>
+		{#if strongMatches.length > 0}
+			{#if possibleMatches.length > 0}
+				<h3 class="section-label">Found {strongMatches.length} photo{strongMatches.length === 1 ? '' : 's'} of you</h3>
+			{/if}
+			<div class="results-grid">
+				{#each strongMatches as assetId}
+					{@render photoCard(assetId)}
+				{/each}
+			</div>
+		{/if}
+
+		{#if possibleMatches.length > 0}
+			<h3 class="section-label possible">Possible photos of you</h3>
+			<div class="results-grid">
+				{#each possibleMatches as assetId}
+					{@render photoCard(assetId)}
+				{/each}
+			</div>
+		{/if}
 	{:else}
 		<div class="no-matches">
 			{#if searchMethod === 'text'}
@@ -325,8 +410,10 @@
 	onclose={closeLightbox}
 	onprev={prevPhoto}
 	onnext={nextPhoto}
+	ondelete={deleteSingle}
 	hasPrev={lightboxIdx > 0}
 	hasNext={lightboxIdx < matchedAssetIds.length - 1}
+	canDelete={true}
 />
 
 <style>
@@ -474,6 +561,19 @@
 		background: linear-gradient(135deg, #1d4ed8, #6d28d9);
 	}
 
+	.delete-btn {
+		background: #dc2626;
+	}
+
+	.delete-btn:hover:not(:disabled) {
+		background: #b91c1c;
+	}
+
+	.delete-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
 	button.secondary {
 		background: #333;
 	}
@@ -491,6 +591,20 @@
 	button.tertiary:hover {
 		border-color: #555;
 		color: #fff;
+	}
+
+	.section-label {
+		font-size: 1.1rem;
+		margin: 1.5rem 0 0.75rem;
+		color: #fff;
+	}
+
+	.section-label:first-child {
+		margin-top: 0;
+	}
+
+	.section-label.possible {
+		color: #888;
 	}
 
 	.results-grid {

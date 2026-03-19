@@ -209,4 +209,21 @@ export async function searchByText(
 	}
 }
 
+export async function deletePhotos(assetIds: string[]): Promise<void> {
+	const res = await fetch(`${IMMICH_API_URL}/assets`, {
+		method: 'DELETE',
+		headers: {
+			'x-api-key': IMMICH_API_KEY,
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({ ids: assetIds, force: true })
+	});
+
+	// 400 = "Not found or no access" — assets already gone, treat as success
+	if (!res.ok && res.status !== 400) {
+		const body = await res.text().catch(() => '');
+		throw new Error(`Immich delete failed (${res.status}): ${body}`);
+	}
+}
+
 export { getAllPeople };

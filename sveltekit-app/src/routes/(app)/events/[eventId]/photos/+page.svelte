@@ -40,7 +40,15 @@
 		loadPhotos(currentPage);
 	}
 
+	let selectMode = $state(false);
+	let selectedIds = $state<string[]>([]);
+	let deleting = $state(false);
+
 	function openLightbox(assetId: string) {
+		if (selectMode) {
+			toggleSelect(assetId);
+			return;
+		}
 		lightboxId = assetId;
 	}
 
@@ -60,19 +68,81 @@
 		if (idx < assetIds.length - 1) lightboxId = assetIds[idx + 1];
 	}
 
+	function toggleSelect(assetId: string) {
+		if (selectedIds.includes(assetId)) {
+			selectedIds = selectedIds.filter((id) => id !== assetId);
+		} else {
+			selectedIds = [...selectedIds, assetId];
+		}
+	}
+
+	function toggleSelectMode() {
+		selectMode = !selectMode;
+		if (!selectMode) selectedIds = [];
+	}
+
+	async function deleteSelected() {
+		if (selectedIds.length === 0) return;
+		if (!confirm(`Delete ${selectedIds.length} photo(s)? This cannot be undone.`)) return;
+
+		deleting = true;
+		const failed: string[] = [];
+
+		for (const id of selectedIds) {
+			const res = await fetch(`/api/photos/${id}`, { method: 'DELETE' });
+			if (!res.ok) failed.push(id);
+		}
+
+		assetIds = assetIds.filter((id) => !selectedIds.includes(id) || failed.includes(id));
+		selectedIds = [];
+		deleting = false;
+
+		if (failed.length > 0) {
+			alert(`Failed to delete ${failed.length} photo(s).`);
+		}
+	}
+
+	async function deleteSingle(assetId: string) {
+		const res = await fetch(`/api/photos/${assetId}`, { method: 'DELETE' });
+		if (res.ok) {
+			assetIds = assetIds.filter((id) => id !== assetId);
+			// Move to next photo or close
+			const idx = assetIds.indexOf(assetId);
+			if (assetIds.length === 0) {
+				lightboxId = null;
+			} else if (idx < assetIds.length) {
+				lightboxId = assetIds[idx];
+			} else {
+				lightboxId = assetIds[assetIds.length - 1];
+			}
+		} else {
+			alert('Failed to delete photo.');
+		}
+	}
+
 	let lightboxIdx = $derived(lightboxId ? assetIds.indexOf(lightboxId) : -1);
 </script>
 
 <div class="page-header">
 	<a href="/events/{$page.params.eventId}" class="back">&larr; Back to event</a>
 	<h1>{eventName ? `${eventName} - Photos` : 'Event Photos'}</h1>
-	<a href="/events/{$page.params.eventId}/my-photos" class="find-me-btn">
-		Find My Photos
-	</a>
+	<div class="header-actions">
+		<button class="select-btn" class:active={selectMode} onclick={toggleSelectMode}>
+			{selectMode ? 'Cancel' : 'Select'}
+		</button>
+		{#if selectMode && selectedIds.length > 0}
+			<button class="delete-btn" onclick={deleteSelected} disabled={deleting}>
+				{deleting ? 'Deleting...' : `Delete (${selectedIds.length})`}
+			</button>
+		{/if}
+		<a href="/events/{$page.params.eventId}/my-photos" class="find-me-btn">
+			Find My Photos
+		</a>
+	</div>
 </div>
 
 {#if assetIds.length > 0}
-	<PhotoGrid {assetIds} onselect={openLightbox} selectable={false} />
+	<PhotoGrid {assetIds} {selectedIds} onselect={openLightbox} selectable={selectMode} />
 
 	{#if hasMore}
 		<div class="load-more">
@@ -92,8 +162,10 @@
 	onclose={closeLightbox}
 	onprev={prevPhoto}
 	onnext={nextPhoto}
+	ondelete={deleteSingle}
 	hasPrev={lightboxIdx > 0}
 	hasNext={lightboxIdx < assetIds.length - 1}
+	canDelete={true}
 />
 
 <style>
@@ -118,6 +190,51 @@
 	h1 {
 		flex: 1;
 		font-size: 1.5rem;
+	}
+
+	.header-actions {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
+
+	.select-btn {
+		background: #222;
+		color: #fff;
+		border: 1px solid #333;
+		padding: 0.6rem 1.2rem;
+		border-radius: 8px;
+		cursor: pointer;
+		font-size: 0.9rem;
+	}
+
+	.select-btn:hover {
+		background: #333;
+	}
+
+	.select-btn.active {
+		background: #2563eb;
+		border-color: #2563eb;
+	}
+
+	.delete-btn {
+		background: #dc2626;
+		color: #fff;
+		border: none;
+		padding: 0.6rem 1.2rem;
+		border-radius: 8px;
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 0.9rem;
+	}
+
+	.delete-btn:hover:not(:disabled) {
+		background: #b91c1c;
+	}
+
+	.delete-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.find-me-btn {

@@ -1,6 +1,6 @@
-import { error } from '@sveltejs/kit';
+import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getPhotoThumbnail } from '$lib/server/services/photo.service.js';
+import { getPhotoThumbnail, deleteEventPhotos } from '$lib/server/services/photo.service.js';
 import { createHash } from 'crypto';
 
 export const GET: RequestHandler = async ({ params, url, locals, request }) => {
@@ -37,5 +37,20 @@ export const GET: RequestHandler = async ({ params, url, locals, request }) => {
 		});
 	} catch (err) {
 		return error(500, err instanceof Error ? err.message : 'Failed to load photo');
+	}
+};
+
+export const DELETE: RequestHandler = async ({ params, locals }) => {
+	const session = await locals.auth();
+	if (!session?.user?.id) {
+		return error(401, 'Unauthorized');
+	}
+
+	try {
+		await deleteEventPhotos([params.assetId]);
+		return json({ deleted: true });
+	} catch (err) {
+		console.error(`[delete] Failed to delete asset ${params.assetId}:`, err);
+		return error(500, err instanceof Error ? err.message : 'Failed to delete photo');
 	}
 };

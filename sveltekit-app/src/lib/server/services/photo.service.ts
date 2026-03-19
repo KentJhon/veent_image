@@ -1,10 +1,10 @@
-import { getAlbumPhotos, getAssetThumbnail, getAssetOriginal, addPhotosToAlbum, uploadPhoto } from '../immich.js';
-import { getWatermarkedImage } from '../watermark.js';
+import { getAlbumPhotos, getAssetThumbnail, getAssetOriginal, addPhotosToAlbum, uploadPhoto, deletePhotos } from '../immich.js';
+import { getWatermarkedImage, clearWatermarkCacheForAsset } from '../watermark.js';
 import { WATERMARK_BRAND_NAME } from '../env.js';
-import { s3Enabled, uploadToS3, getFromS3, uploadThumbnailToS3, getThumbnailFromS3 } from '../s3.js';
+import { s3Enabled, uploadToS3, getFromS3, uploadThumbnailToS3, getThumbnailFromS3, deleteFromS3 } from '../s3.js';
 import { db } from '../db/index.js';
-import { purchases } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { purchases, purchaseBundles, faceMatchSessions } from '../db/schema.js';
+import { eq, and, sql } from 'drizzle-orm';
 
 export async function listEventPhotos(albumId: string, page = 1, size = 50) {
 	const result = await getAlbumPhotos(albumId, page, size);
@@ -114,6 +114,36 @@ export async function getPhotoOriginal(
 	const filename = disposition?.match(/filename="?([^"]+)"?/)?.[1] ?? `photo-${assetId}.jpg`;
 
 	return { stream: res.body, contentType, filename };
+}
+
+export async function deleteEventPhotos(assetIds: string[]): Promise<void> {
+	// 1. Delete from Immich (source of truth)
+	await deletePhotos(assetIds);
+
+	// 2. Clean up S3 copies (fire-and-forget)
+	if (s3Enabled) {
+		Promise.allSettled(assetIds.map((id) => deleteFromS3(id)))
+			.catch((err) => console.error('[S3] Bulk delete failed:', err));
+	}
+
+	// 3. Clean up watermark cache
+	for (const id of assetIds) {
+		clearWatermarkCacheForAsset(id);
+	}
+
+	// 4. Remove related purchase records
+	for (const assetId of assetIds) {
+		await db.delete(purchases).where(eq(purchases.assetId, assetId));
+	}
+
+	// 5. Remove deleted asset IDs from face match sessions
+	for (const assetId of assetIds) {
+		await db.execute(sql`
+			UPDATE face_match_sessions
+			SET matched_asset_ids = array_remove(matched_asset_ids, ${assetId})
+			WHERE ${assetId} = ANY(matched_asset_ids)
+		`);
+	}
 }
 
 export async function hasPurchased(userId: string, assetId: string): Promise<boolean> {

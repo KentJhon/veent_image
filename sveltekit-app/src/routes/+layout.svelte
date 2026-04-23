@@ -7,13 +7,13 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<title>EventSnap - Find Your Event Photos</title>
+	<title>VeentSnap - Find Your Event Photos</title>
 </svelte:head>
 
 <div class="app">
 	<header>
 		<nav>
-			<a href="/" class="logo">EventSnap</a>
+			<a href="/" class="logo">VeentSnap</a>
 			<div class="nav-links">
 				<a href="/events">Events</a>
 				{#if data.session?.user}
@@ -33,7 +33,7 @@
 	</main>
 
 	<footer>
-		<p>EventSnap &mdash; Find yourself in every moment</p>
+		<p>VeentSnap &mdash; Find yourself in every moment</p>
 	</footer>
 </div>
 

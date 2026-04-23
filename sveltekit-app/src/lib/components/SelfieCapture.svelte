@@ -13,15 +13,30 @@
 	let preview = $state<string | null>(null);
 	let validationError = $state('');
 	let captured = $state(false);
+	let facingMode = $state<'user' | 'environment'>('user');
 
 	async function openCamera() {
 		try {
 			stream = await navigator.mediaDevices.getUserMedia({
-				video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } }
+				video: { facingMode, width: { ideal: 720 }, height: { ideal: 720 } }
 			});
 			showCamera = true;
 		} catch {
 			fileInput?.click();
+		}
+	}
+
+	async function switchCamera() {
+		facingMode = facingMode === 'user' ? 'environment' : 'user';
+		stream?.getTracks().forEach((t) => t.stop());
+		try {
+			stream = await navigator.mediaDevices.getUserMedia({
+				video: { facingMode, width: { ideal: 720 }, height: { ideal: 720 } }
+			});
+			if (videoRef) videoRef.srcObject = stream;
+		} catch {
+			// fallback: switch back if the other camera isn't available
+			facingMode = facingMode === 'user' ? 'environment' : 'user';
 		}
 	}
 
@@ -112,10 +127,16 @@
 		</div>
 	{:else if showCamera}
 		<!-- svelte-ignore a11y_media_has_caption -->
-		<video bind:this={videoRef} autoplay playsinline class="camera-view">
+		<video bind:this={videoRef} autoplay playsinline class="camera-view" class:mirrored={facingMode === 'user'}>
 			<track kind="captions" />
 		</video>
 		<div class="camera-controls">
+			<button onclick={switchCamera} class="secondary switch-btn" type="button" title="Switch camera">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M20 16v4H4v-4"/><path d="M4 8V4h16v4"/>
+					<polyline points="7 20 4 16 7 12"/><polyline points="17 4 20 8 17 12"/>
+				</svg>
+			</button>
 			<button onclick={captureFromCamera} {disabled} type="button">Capture</button>
 			<button onclick={stopCamera} class="secondary" type="button">Cancel</button>
 		</div>
@@ -204,14 +225,24 @@
 		max-width: 400px;
 		width: 100%;
 		border-radius: 12px;
-		transform: scaleX(-1);
 		background: #111;
+	}
+
+	.camera-view.mirrored {
+		transform: scaleX(-1);
 	}
 
 	.camera-controls {
 		display: flex;
 		align-items: center;
 		gap: 1rem;
+	}
+
+	.switch-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.7rem;
 	}
 
 	.capture-area {

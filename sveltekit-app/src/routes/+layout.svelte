@@ -129,4 +129,28 @@
 		font-size: 0.8rem;
 		border-top: 1px solid #222;
 	}
+
+	@media (max-width: 640px) {
+		nav {
+			flex-wrap: wrap;
+			height: auto;
+			padding: 0.75rem 0;
+			gap: 0.5rem;
+		}
+
+		.nav-links {
+			flex-wrap: wrap;
+			gap: 0.75rem;
+			width: 100%;
+			justify-content: flex-start;
+		}
+
+		header {
+			padding: 0 1rem;
+		}
+
+		main {
+			padding: 1rem;
+		}
+	}
 </style>

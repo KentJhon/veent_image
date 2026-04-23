@@ -80,6 +80,7 @@ services:
       IMMICH_DB_URL: postgresql://${IMMICH_RO_USER:-sveltekit_ro}:${IMMICH_RO_PASS:?}@database:5432/${DB_DATABASE_NAME:-immich}
       AUTH_TRUST_HOST: 'true'
       ORIGIN: http://localhost:3000
+      BODY_SIZE_LIMIT: '52428800'
       IMMICH_SERVICE_USER_ID: ${IMMICH_SERVICE_USER_ID:?}
       S3_URL: ${S3_URL:-}
       S3_BUCKET: ${S3_BUCKET:-}
